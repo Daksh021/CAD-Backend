@@ -1,0 +1,20 @@
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+sqlalchemy==2.0.30
+pydantic==2.7.1
+python-multipart==0.0.9
+
+# PDF rendering
+PyMuPDF==1.24.3
+
+# Image processing & OCR
+pillow==10.3.0
+opencv-python-headless==4.9.0.80
+pytesseract==0.3.10
+
+# Excel export
+openpyxl==3.1.2
+
+# Dev / testing
+pytest==8.2.0
+httpx==0.27.0
