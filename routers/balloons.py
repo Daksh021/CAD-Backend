@@ -5,10 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
 from models import Balloon, Drawing
-from schemas import (
-    BalloonCreate, BalloonUpdate, BalloonResponse,
-    AutoDetectRequest, AutoDetectResponse,
+from schemas.balloon_schema import (
+    BalloonCreate, BalloonUpdate, BalloonResponse
 )
+from schemas.detection_schema import (
+    AutoDetectRequest, AutoDetectResponse
+)
+from schemas.export_schema import ExportRequest
 from services.detection_service import auto_detect_balloons
 
 router = APIRouter()

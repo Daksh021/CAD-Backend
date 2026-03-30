@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from database import get_db
 from models import Balloon, Drawing
-from schemas import ExportRequest
+from schemas.export_schema import ExportRequest
 from services.excel_service import build_excel_workbook
 
 router = APIRouter()
