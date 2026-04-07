@@ -1,0 +1,7 @@
+__pycache__/
+cadenv/
+node_modules/
+.env
+*.db
+.idea/
+render_cache/
