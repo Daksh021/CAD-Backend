@@ -2,7 +2,7 @@ import type { Balloon } from "../store/useStore";
 import { api } from "./api";
 
 export const getBalloons = (drawingId: number, pageNumber?: number) =>
-  api.get<Balloon[]>("/balloons", {
+  api.get<Balloon[]>("/api/balloons", {
     params: {
       drawing_id: drawingId,
       page_number: pageNumber,
@@ -10,19 +10,27 @@ export const getBalloons = (drawingId: number, pageNumber?: number) =>
   });
 
 export const autoDetectBalloons = (drawingId: number, pageNumber: number) =>
-  api.post("/balloons/auto-detect", {
+  api.post("/api/balloons/auto-detect", {
     drawing_id: drawingId,
     page_number: pageNumber,
   });
 
 export const createBalloon = (payload: unknown) =>
-  api.post("/balloons", payload);
+  api.post("/api/balloons/", payload);
 
 export const getBalloon = (balloonId: number) =>
-  api.get(`/balloons/${balloonId}`);
+  api.get(`/api/balloons/${balloonId}`);
 
 export const updateBalloon = (balloonId: number, payload: unknown) =>
-  api.patch(`/balloons/${balloonId}`, payload);
+  api.patch(`/api/balloons/${balloonId}`, payload);
 
 export const deleteBalloon = (balloonId: number) =>
-  api.delete(`/balloons/${balloonId}`);
+  api.delete(`/api/balloons/${balloonId}`);
+
+export const deleteAllBalloons = (drawingId: number, pageNumber?: number) =>
+  api.delete("/api/balloons/all", {
+    params: {
+      drawing_id: drawingId,
+      page_number: pageNumber,
+    },
+  });

@@ -1,7 +1,7 @@
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from database import get_db
 from models import Balloon, Drawing
@@ -46,13 +46,13 @@ def run_auto_detection(req: AutoDetectRequest, db: Session = Depends(get_db)):
     for idx, det in enumerate(detections, start=1):
         b = Balloon(
             drawing_id=req.drawing_id,
-            balloon_number=idx,
+            balloon_number=int(idx),
             page_number=req.page_number,
-            x_pct=det["x_pct"],
-            y_pct=det["y_pct"],
+            x_pct=float(det["x_pct"]),
+            y_pct=float(det["y_pct"]),
             balloon_type=det["type"],
-            extracted_text=det.get("text"),
-            description=det.get("description"),
+            extracted_text=str(det.get("text") or ""),
+            description=str(det.get("description") or ""),
             is_auto=1,
         )
         db.add(b)
@@ -69,7 +69,7 @@ def run_auto_detection(req: AutoDetectRequest, db: Session = Depends(get_db)):
     )
 
 
-@router.post("/", response_model=BalloonResponse)
+@router.post("", response_model=BalloonResponse)
 def create_balloon(payload: BalloonCreate, db: Session = Depends(get_db)):
     drawing = db.query(Drawing).filter(Drawing.id == payload.drawing_id).first()
     if not drawing:
@@ -111,6 +111,25 @@ def update_balloon(balloon_id: int, payload: BalloonUpdate, db: Session = Depend
     db.refresh(b)
     return b
 
+# DELETE ALL BALLOONS (by drawing + optional page)
+@router.delete("/all")
+def delete_all_balloons(
+    drawing_id: int = Query(...),
+    page_number: int | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    query = db.query(Balloon).filter(Balloon.drawing_id == drawing_id)
+
+    if page_number is not None:
+        query = query.filter(Balloon.page_number == page_number)
+
+    deleted_count = query.delete(synchronize_session=False)
+    db.commit()
+
+    return {
+        "message": "All balloons deleted",
+        "deleted_count": deleted_count
+    }
 
 @router.delete("/{balloon_id}")
 def delete_balloon(balloon_id: int, db: Session = Depends(get_db)):
@@ -120,3 +139,4 @@ def delete_balloon(balloon_id: int, db: Session = Depends(get_db)):
     db.delete(b)
     db.commit()
     return {"message": "Balloon deleted"}
+

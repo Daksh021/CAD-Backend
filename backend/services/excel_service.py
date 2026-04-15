@@ -104,8 +104,8 @@ def _build_balloon_sheet(wb: Workbook, drawing, balloons, include_remarks: bool)
             (b.balloon_type.value if hasattr(b.balloon_type, "value") else str(b.balloon_type)).upper(),
             b.extracted_text or "",
             b.description   or "",
-            f"{b.x_pct:.1f}",
-            f"{b.y_pct:.1f}",
+            f"{b.x_pct * 100:.1f}",
+            f"{b.y_pct * 100:.1f}",
         ]
         if include_remarks:
             row_data.append(b.remarks or "")

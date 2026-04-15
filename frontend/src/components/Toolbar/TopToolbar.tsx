@@ -1,15 +1,54 @@
-import { autoDetectBalloons } from "../../services/balloons";
+import { autoDetectBalloons, deleteAllBalloons } from "../../services/balloons";
+import { exportExcel } from "../../services/export";
 import { useStore } from "../../store/useStore";
 
 const TopToolbar = () => {
-  const drawingId = 1;
-  const page = 1;
+  const { balloons, setBalloons, tool, setTool, setSelectedBalloonId } =
+    useStore();
 
-  const { setBalloons, tool, setTool } = useStore();
+  // Temporary fixed values until drawing/page are added to the store.
+  const drawingId = 1;
+  const pageNumber = 1;
 
   const handleAutoDetect = async () => {
-    const res = await autoDetectBalloons(drawingId, page);
-    setBalloons(res.data.balloons);
+    try {
+      const res = await autoDetectBalloons(drawingId, pageNumber);
+      setBalloons(res.data.balloons || []);
+    } catch (error) {
+      console.error("Auto detect failed:", error);
+    }
+  };
+
+  const handleDeleteAll = async () => {
+    const ok = window.confirm("Delete all balloons on this page?");
+    if (!ok) return;
+
+    try {
+      await deleteAllBalloons(drawingId, pageNumber);
+      setBalloons([]);
+      setSelectedBalloonId(null);
+    } catch (error) {
+      console.error("Delete all failed:", error);
+    }
+  };
+
+  const handleExport = async () => {
+    try {
+      const res = await exportExcel(drawingId);
+
+      const blob = new Blob([res.data], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `balloons_${drawingId}.xlsx`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Export failed:", error);
+    }
   };
 
   return (
@@ -29,11 +68,18 @@ const TopToolbar = () => {
         onClick={() => setTool("add")}
         className={`px-4 py-2 rounded ${
           tool === "add"
-            ? "bg-blue-600 text-white"
-            : "bg-blue-700 hover:bg-blue-600 text-white"
+            ? "bg-pink-600 text-white"
+            : "bg-pink-600 hover:bg-pink-500 text-white"
         }`}
       >
         Add Balloon
+      </button>
+
+      <button
+        onClick={handleAutoDetect}
+        className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-500 text-white"
+      >
+        Auto Detect
       </button>
 
       <button
@@ -48,13 +94,17 @@ const TopToolbar = () => {
       </button>
 
       <button
-        onClick={handleAutoDetect}
-        className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-500 text-white"
+        onClick={handleDeleteAll}
+        disabled={balloons.length === 0}
+        className="px-4 py-2 rounded bg-red-600 hover:bg-red-500 text-white disabled:opacity-50"
       >
-        Auto Detect
+        Delete All
       </button>
 
-      <button className="px-4 py-2 rounded bg-green-600 hover:bg-green-500 text-white">
+      <button
+        onClick={handleExport}
+        className="px-4 py-2 rounded bg-green-600 hover:bg-green-500 text-white"
+      >
         Export
       </button>
     </div>

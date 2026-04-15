@@ -6,7 +6,7 @@ from models import BalloonType
 
 class BalloonBase(BaseModel):
     drawing_id: int
-    balloon_number: int
+    balloon_number: Optional[int] = None
     page_number: int = 1
     x_pct: float
     y_pct: float
@@ -27,7 +27,7 @@ class BalloonResponse(BalloonBase):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
-    
+
 
 class BalloonUpdate(BaseModel):
     balloon_number: Optional[int] = None
