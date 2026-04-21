@@ -19,6 +19,15 @@ type StagePos = {
 };
 
 type StoreState = {
+  imageUrl: string;
+  setImageUrl: (url: string) => void;
+
+  drawingId: number | null;
+  setDrawingId: (id: number | null) => void;
+
+  pageNumber: number;
+  setPageNumber: (page: number) => void;
+
   balloons: Balloon[];
   selectedBalloonId: number | null;
   tool: Tool;
@@ -33,15 +42,22 @@ type StoreState = {
 };
 
 export const useStore = create<StoreState>((set) => ({
+  imageUrl: "",
+  drawingId: null,
+  pageNumber: 1,
   balloons: [],
   selectedBalloonId: null,
   tool: "select",
   zoom: 1,
   stagePos: { x: 0, y: 0 },
-
+  
+  setImageUrl: (url: string) => set({ imageUrl: url }),
+  setDrawingId: (id) => set({ drawingId: id }),
+  setPageNumber: (page) => set({ pageNumber: page }),
   setBalloons: (balloons) => set({ balloons }),
   setSelectedBalloonId: (id) => set({ selectedBalloonId: id }),
   setTool: (tool) => set({ tool }),
   setZoom: (zoom) => set({ zoom }),
   setStagePos: (pos) => set({ stagePos: pos }),
 }));
+

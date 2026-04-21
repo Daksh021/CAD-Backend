@@ -34,3 +34,19 @@ export const deleteAllBalloons = (drawingId: number, pageNumber?: number) =>
       page_number: pageNumber,
     },
   });
+
+/**
+ * Upload a file (image or PDF) to the backend for unified upload + OCR detection.
+ * Returns the drawing record, detected balloons, and a rendered image URL.
+ */
+export const detectImage = async (file: File) => {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await api.post("/api/drawings/upload-and-detect", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+
+  return res.data;
+};
+

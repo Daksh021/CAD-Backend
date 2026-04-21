@@ -34,73 +34,22 @@ def _configure_tesseract() -> None:
     for path in candidates:
         if os.path.isfile(path):
             pytesseract.pytesseract.tesseract_cmd = path
-            print(f"✅ Tesseract found at: {path}")
+            print(f"Tesseract found at: {path}")
             return
 
     raise RuntimeError(
         "Tesseract not found. Install it and add it to PATH, or place it in a common Windows install location."
     )
 
-
-_configure_tesseract()
-
-
 # ---------------------------
 # CONFIG
 # ---------------------------
 
-MAX_BALLOONS = 15
+MAX_BALLOONS = 30
 MIN_CONFIDENCE = 35
 
-ROOM_KEYWORDS = (
-    "BED",
-    "ROOM",
-    "BATH",
-    "DINING",
-    "LIVING",
-    "OPEN",
-    "AREA",
-    "GARAGE",
-    "KITCHEN",
-    "HALL",
-    "LOBBY",
-    "TOILET",
-    "STORE",
-    "PORCH",
-    "BALCONY",
-    "PASSAGE",
-    "STAIR",
-    "STAIRS",
-    "UTILITY",
-    "POOJA",
-    "STUDY",
-    "OFFICE",
-    "VERANDA",
-    "TERRACE",
-)
-
-ALLOWED_SINGLE_WORD_LABELS = {
-    "GARAGE",
-    "KITCHEN",
-    "HALL",
-    "LOBBY",
-    "TOILET",
-    "STORE",
-    "PORCH",
-    "BALCONY",
-    "PASSAGE",
-    "STAIR",
-    "STAIRS",
-    "UTILITY",
-    "POOJA",
-    "STUDY",
-    "OFFICE",
-    "VERANDA",
-    "TERRACE",
-}
-
 # Keep OCR passes light so auto-detect stays responsive
-OCR_CONFIGS = ("--oem 3 --psm 6",)
+OCR_CONFIGS = ("--oem 3 --psm 6", "--oem 3 --psm 11")
 
 
 # ---------------------------
@@ -110,7 +59,8 @@ OCR_CONFIGS = ("--oem 3 --psm 6",)
 def clean_text(text: str) -> str:
     text = (text or "").strip()
     text = re.sub(r"\s+", " ", text)
-    text = re.sub(r"[^A-Za-z0-9\s.-]", " ", text)
+    # Allow numbers, letters, degrees (°), +/-, diameters (Ø), and basic punctuation
+    text = re.sub(r"[^A-Za-z0-9\s.\-+°Øx()/,_]", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
@@ -122,41 +72,45 @@ def alpha_ratio(text: str) -> float:
     return alpha / max(len(text), 1)
 
 
-def is_dimension_like(text: str) -> bool:
-    text = clean_text(text)
-    if not text:
-        return True
-
-    if re.fullmatch(r"\d+(\.\d+)?", text):
-        return True
-
-    if alpha_ratio(text) < 0.35:
-        return True
-
-    return False
-
-
-def is_room_like(text: str) -> bool:
+def is_cad_feature(text: str) -> bool:
     """
-    Keep only room-style labels.
+    Identify if text is a mechanical drawing feature using strict pattern matching.
     """
     text = clean_text(text).upper()
 
     if not text:
         return False
 
-    if len(text.split()) > 4:
-        return False
+    # Standard CAD view/section callouts
+    if re.search(r"\b(SECTION|VIEW|DETAIL)\s+[A-Z](-[A-Z])?\b", text):
+        return True
 
-    if is_dimension_like(text):
-        return False
+    # Remove all spaces and typical OCR artifact characters to analyze the core string
+    core = text.replace(" ", "").replace(",", ".")
+    # Common OCR mistakes
+    core = core.replace("O", "0").replace("I", "1")
 
-    tokens = text.split()
+    # Pure dimensions: 12.5, R3, M8, 039, 1X45
+    if re.fullmatch(r"^[RMSO0]?[0-9]+(\.[0-9]+)?(X[0-9]+)?$", core):
+        # Reject isolated single digits (e.g. "1", "2") to avoid grid numbers and OCR noise.
+        # Valid single digit dimensions are extremely rare in mechanical drawings without tolerances.
+        if re.fullmatch(r"^[0-9]$", core):
+            return False
+        return True
 
-    if len(tokens) == 1:
-        return tokens[0] in ALLOWED_SINGLE_WORD_LABELS
+    # Tolerances: +0.150, -0.000
+    if re.fullmatch(r"^[+-][0-9]+(\.[0-9]+)?$", core):
+        return True
+        
+    # Tolerances like H12
+    if re.fullmatch(r"^H[0-9]+$", core):
+        return True
+        
+    # Dimensions with tolerance class: 10H12, 39H8
+    if re.fullmatch(r"^[0-9]+H[0-9]+$", core):
+        return True
 
-    return any(keyword in text for keyword in ROOM_KEYWORDS)
+    return False
 
 
 def safe_float(value: Any, default: float = -1.0) -> float:
@@ -307,7 +261,7 @@ def preprocess_variants(gray: np.ndarray):
 # OCR DETECTION
 # ---------------------------
 
-def ocr_room_labels(gray: np.ndarray, width: int, height: int) -> list:
+def ocr_cad_features(gray: np.ndarray, width: int, height: int) -> list:
     detections = []
 
     for variant_name, variant, scale in preprocess_variants(gray):
@@ -329,9 +283,6 @@ def ocr_room_labels(gray: np.ndarray, width: int, height: int) -> list:
                 if conf < MIN_CONFIDENCE:
                     continue
 
-                if is_dimension_like(raw):
-                    continue
-
                 key = (
                     int(data["block_num"][i]),
                     int(data["par_num"][i]),
@@ -347,7 +298,7 @@ def ocr_room_labels(gray: np.ndarray, width: int, height: int) -> list:
                     continue
 
                 phrase = clean_text(" ".join(words)).upper()
-                if not is_room_like(phrase):
+                if not is_cad_feature(phrase):
                     continue
 
                 x1, y1, x2, y2 = merge_bbox(indices, data)
@@ -374,6 +325,13 @@ def ocr_room_labels(gray: np.ndarray, width: int, height: int) -> list:
                 else:
                     cx = (x1 + x2) / 2
                     cy = (y1 + y2) / 2
+
+                # Determine balloon type based on content
+                b_type = "dimension"
+                if "SECTION" in phrase or "VIEW" in phrase or "NOTE" in phrase:
+                    b_type = "note"
+                elif "+" in phrase or "-" in phrase or "MAX" in phrase or "MIN" in phrase:
+                    b_type = "tolerance"
 
                 detections.append(
                     make_detection(
@@ -420,8 +378,9 @@ def contour_fallback(gray: np.ndarray, width: int, height: int) -> list:
 
     candidates = []
 
-    min_area = max(120, int(width * height * 0.00002))
-    max_area = int(width * height * 0.02)
+    # Scale down min_area for CAD dimensions which can be quite small
+    min_area = max(40, int(width * height * 0.000005))
+    max_area = int(width * height * 0.03)
 
     for cnt in contours:
         x, y, w, h = cv2.boundingRect(cnt)
@@ -430,11 +389,11 @@ def contour_fallback(gray: np.ndarray, width: int, height: int) -> list:
         if area < min_area or area > max_area:
             continue
 
-        if w < 10 or h < 8:
+        if w < 5 or h < 5:
             continue
 
         aspect = max(w, h) / max(min(w, h), 1)
-        if aspect > 6:
+        if aspect > 15:
             continue
 
         crop = gray[max(0, y - 2):min(height, y + h + 2), max(0, x - 2):min(width, x + w + 2)]
@@ -447,11 +406,15 @@ def contour_fallback(gray: np.ndarray, width: int, height: int) -> list:
             raw = pytesseract.image_to_string(crop_up, config=config)
             text = clean_text(raw).upper()
 
-            if not is_room_like(text):
+            if not is_cad_feature(text):
                 continue
 
             cx = x + w / 2
             cy = y + h / 2
+
+            b_type = "dimension"
+            if "+" in text or "-" in text:
+                b_type = "tolerance"
 
             candidates.append(
                 make_detection(
@@ -465,6 +428,7 @@ def contour_fallback(gray: np.ndarray, width: int, height: int) -> list:
                     stage="fallback",
                 )
             )
+            # Only need to identify it once successfully
             break
 
     return candidates
@@ -475,7 +439,9 @@ def contour_fallback(gray: np.ndarray, width: int, height: int) -> list:
 # ---------------------------
 
 def auto_detect_balloons(file_path: str, page_number: int):
-    print("🔍 Floor-plan auto detect starting")
+    
+    _configure_tesseract()
+    print("Floor-plan auto detect starting")
 
     png_path = render_page_to_png(file_path, page_number)
     img = Image.open(png_path).convert("RGB")
@@ -489,7 +455,7 @@ def auto_detect_balloons(file_path: str, page_number: int):
     # ---------------------------
     # OCR DETECTION
     # ---------------------------
-    detections = ocr_room_labels(gray, width, height)
+    detections = ocr_cad_features(gray, width, height)
     print(f"  OCR raw detections: {len(detections)}")
 
     detections = dedupe(detections)
@@ -499,7 +465,7 @@ def auto_detect_balloons(file_path: str, page_number: int):
     # FALLBACK (if OCR weak)
     # ---------------------------
     if len(detections) < 2:
-        print("⚠️ OCR too weak, using fallback")
+        print("OCR too weak, using fallback")
         fallback = contour_fallback(gray, width, height)
         detections.extend(fallback)
         detections = dedupe(detections)
@@ -572,5 +538,5 @@ def auto_detect_balloons(file_path: str, page_number: int):
     # ---------------------------
     final = strip_internal(final)
 
-    print(f"✅ Final balloon count: {len(final)}")
+    print(f"Final balloon count: {len(final)}")
     return final

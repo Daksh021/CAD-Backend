@@ -10,16 +10,9 @@ import {
 } from "react-konva";
 import useImage from "use-image";
 
-import {
-  createBalloon,
-  getBalloons,
-  updateBalloon,
-} from "../../services/balloons";
-import { getDrawingPageUrl } from "../../services/drawings";
+import { updateBalloon } from "../../services/balloons";
 import { useStore } from "../../store/useStore";
 
-const DRAWING_ID = 1;
-const PAGE_NUMBER = 1;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 5;
 
@@ -31,36 +24,58 @@ const DrawingCanvas = () => {
     height: 600,
   });
 
-  const [imageUrl, setImageUrl] = useState("");
-  const [image] = useImage(imageUrl);
+  // ✅ SINGLE source of truth
+  const imageUrl = useStore((s) => s.imageUrl);
+  const balloons = useStore((s) => s.balloons);
+  const setBalloons = useStore((s) => s.setBalloons);
+  const tool = useStore((s) => s.tool);
+  const selectedBalloonId = useStore((s) => s.selectedBalloonId);
+  const setSelectedBalloonId = useStore((s) => s.setSelectedBalloonId);
+  const zoom = useStore((s) => s.zoom);
+  const setZoom = useStore((s) => s.setZoom);
+  const stagePos = useStore((s) => s.stagePos);
+  const setStagePos = useStore((s) => s.setStagePos);
 
+  const [image] = useImage(imageUrl, "anonymous");
   const [fitScale, setFitScale] = useState(1);
 
-  const {
-    balloons,
-    setBalloons,
-    tool,
-    selectedBalloonId,
-    setSelectedBalloonId,
-    zoom,
-    setZoom,
-    stagePos,
-    setStagePos,
-  } = useStore();
+  console.log("imageUrl:", imageUrl);
+  console.log("IMAGE OBJECT:", image);
 
-  useEffect(() => {
-    const url = getDrawingPageUrl(DRAWING_ID, PAGE_NUMBER);
-    setImageUrl(url);
+  const drawingId = useStore((s) => s.drawingId);
+  const pageNumber = useStore((s) => s.pageNumber);
 
-    getBalloons(DRAWING_ID, PAGE_NUMBER)
-      .then((res) => {
-        setBalloons(res.data);
-      })
-      .catch((err) => {
-        console.log("No balloons yet or failed to load balloons:", err);
-      });
-  }, [setBalloons]);
+  const handleStageClick = async (e: any) => {
+    if (tool !== "add" || !image || !drawingId) return;
 
+    const stage = e.target.getStage();
+    const pointer = stage.getPointerPosition();
+    if (!pointer) return;
+
+    const x = (pointer.x - baseX) / (image.width * fitScale * zoom);
+    const y = (pointer.y - baseY) / (image.height * fitScale * zoom);
+
+    if (x < 0 || y < 0 || x > 1 || y > 1) return;
+
+    const payload = {
+      drawing_id: drawingId,
+      balloon_number: balloons.length + 1,
+      page_number: pageNumber,
+      x_pct: x,
+      y_pct: y,
+      balloon_type: "note"
+    };
+
+    try {
+      const { createBalloon } = await import("../../services/balloons");
+      const res = await createBalloon(payload);
+      setBalloons([...balloons, res.data]);
+    } catch (err) {
+      console.error("Failed to create balloon:", err);
+    }
+  };
+
+  // ✅ Resize canvas
   useEffect(() => {
     const updateSize = () => {
       if (containerRef.current) {
@@ -76,6 +91,7 @@ const DrawingCanvas = () => {
     return () => window.removeEventListener("resize", updateSize);
   }, []);
 
+  // ✅ Fit image to screen
   useEffect(() => {
     if (!image) return;
 
@@ -91,6 +107,7 @@ const DrawingCanvas = () => {
   const contentX = baseX + stagePos.x;
   const contentY = baseY + stagePos.y;
 
+  // ✅ Zoom handler
   const handleWheel = (e: KonvaEventObject<WheelEvent>) => {
     e.evt.preventDefault();
     if (!image) return;
@@ -107,7 +124,6 @@ const DrawingCanvas = () => {
     const oldScale = fitScale * oldZoom;
     const newScale = fitScale * newZoom;
 
-    // Zoom around the center of the visible canvas
     const centerX = stageSize.width / 2;
     const centerY = stageSize.height / 2;
 
@@ -126,55 +142,24 @@ const DrawingCanvas = () => {
     });
   };
 
-  const handleStageClick = (e: any) => {
-  if (tool !== "add" || !image) return;
-
-  const stage = e.target.getStage();
-  const pointer = stage.getPointerPosition();
-  if (!pointer) return;
-
-  // ✅ FIXED (remove stagePos subtraction)
-  const x =
-    (pointer.x - baseX) / (image.width * fitScale * zoom);
-
-  const y =
-    (pointer.y - baseY) / (image.height * fitScale * zoom);
-
-  console.log("CLICK FIXED:", { x, y });
-
-  if (x < 0 || y < 0 || x > 1 || y > 1) return;
-
-  createBalloon({
-    drawing_id: DRAWING_ID,
-    page_number: PAGE_NUMBER,
-    x_pct: x,
-    y_pct: y,
-    balloon_type: "note",
-  })
-    .then((res) => {
-      // ✅ FIX stale state
-      setBalloons([...balloons, res.data]);
-    })
-    .catch((err) => {
-      console.log("Create balloon failed:", err.response?.data || err);
-    });
-};
+  // ❌ REMOVED createBalloon (DB-based)
+  // ✅ Optional: you can re-add local balloon creation later if needed
 
   return (
     <div
       ref={containerRef}
       className="absolute inset-0 bg-gray-800 overflow-hidden"
     >
-      {!image && <div className="text-white p-4">Loading image...</div>}
+      {!image && <div className="text-white p-4">Upload an image to start</div>}
 
       <Stage
         width={stageSize.width}
         height={stageSize.height}
-        onClick={handleStageClick}
         onWheel={handleWheel}
         draggable={tool === "pan"}
         x={stagePos.x}
         y={stagePos.y}
+        onClick={handleStageClick}
         onDragEnd={(e) => {
           setStagePos({
             x: e.target.x(),
@@ -182,6 +167,7 @@ const DrawingCanvas = () => {
           });
         }}
       >
+        {/* ✅ IMAGE LAYER */}
         <Layer>
           {image && (
             <KonvaImage
@@ -194,6 +180,7 @@ const DrawingCanvas = () => {
           )}
         </Layer>
 
+        {/* ✅ BALLOON LAYER */}
         <Layer>
           {image &&
             balloons.map((b: any) => (
@@ -216,6 +203,7 @@ const DrawingCanvas = () => {
                     (pos.y - baseY - stagePos.y) /
                     (image.height * contentScale);
 
+                  // ✅ update backend (optional)
                   updateBalloon(b.id, { x_pct: x, y_pct: y })
                     .then((res) => {
                       setBalloons(
@@ -239,7 +227,6 @@ const DrawingCanvas = () => {
                   }
                   shadowBlur={selectedBalloonId === b.id ? 10 : 9}
                   shadowOpacity={0.5}
-                  shadowOffset={{ x: 0, y: 0 }}
                 />
                 <Text
                   text={String(b.balloon_number)}
